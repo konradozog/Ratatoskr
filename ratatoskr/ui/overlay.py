@@ -112,6 +112,45 @@ _STYLE_SUCCESS = _label_style(theme.SUCCESS)
 _STYLE_ERROR = _label_style(theme.ERROR)
 
 
+class VolumeMeter(QWidget):
+    """Tiny horizontal bar that visualises the current microphone RMS level."""
+
+    _BAR_COUNT = 12
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(60, 14)
+        self._level: float = 0.0  # 0.0–1.0
+
+    def set_level(self, level: float):
+        self._level = max(0.0, min(level, 1.0))
+        self.update()
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.Antialiasing)
+        bar_w = 3
+        gap = 2
+        total_w = self._BAR_COUNT * (bar_w + gap) - gap
+        x0 = (self.width() - total_w) // 2
+        lit = round(self._level * self._BAR_COUNT)
+        for i in range(self._BAR_COUNT):
+            x = x0 + i * (bar_w + gap)
+            if i < lit:
+                if i < self._BAR_COUNT * 0.6:
+                    color = QColor(theme.SUCCESS)
+                elif i < self._BAR_COUNT * 0.85:
+                    color = QColor(theme.ACCENT)
+                else:
+                    color = QColor(theme.REC_RED)
+            else:
+                color = QColor(theme.SURFACE3)
+            p.setPen(Qt.NoPen)
+            p.setBrush(color)
+            p.drawRoundedRect(x, 2, bar_w, 10, 1, 1)
+        p.end()
+
+
 class OverlayWidget(QWidget):
     """Frameless floating overlay that shows recording/transcription status."""
 
@@ -165,6 +204,10 @@ class OverlayWidget(QWidget):
             background: transparent;
         """)
         layout.addWidget(self._duration_label)
+
+        self._volume_meter = VolumeMeter()
+        self._volume_meter.setVisible(False)
+        layout.addWidget(self._volume_meter)
 
         layout.addStretch()
 
@@ -229,6 +272,7 @@ class OverlayWidget(QWidget):
         self._dot.start()
         self._dot.setVisible(True)
         self._duration_label.setText("0:00")
+        self._volume_meter.setVisible(True)
         self._btn_pause.setIcon(self._icon_pause)
         self._btn_pause.setToolTip("Pause")
         self._show_buttons(True)
@@ -240,6 +284,7 @@ class OverlayWidget(QWidget):
         self._label.setStyleSheet(_STYLE_ACCENT)
         self._dot.stop()
         self._dot.setVisible(True)
+        self._volume_meter.set_level(0.0)
         self._btn_pause.setIcon(self._icon_resume)
         self._btn_pause.setToolTip("Resume")
         self._show_buttons(True)
@@ -252,6 +297,7 @@ class OverlayWidget(QWidget):
         self._label.setText("Recovering...")
         self._label.setStyleSheet(_STYLE_ACCENT)
         self._duration_label.setText("")
+        self._volume_meter.setVisible(False)
         self._show_buttons(False)
         self.show()
 
@@ -262,6 +308,7 @@ class OverlayWidget(QWidget):
         self._label.setText("Transcribing...")
         self._label.setStyleSheet(_STYLE_ACCENT)
         self._duration_label.setText("")
+        self._volume_meter.setVisible(False)
         self._show_buttons(False)
         self.show()
 
@@ -272,6 +319,7 @@ class OverlayWidget(QWidget):
         self._label.setText(msg)
         self._label.setStyleSheet(_STYLE_SUCCESS)
         self._duration_label.setText("")
+        self._volume_meter.setVisible(False)
         self._show_buttons(False)
         self.show()
         self._hide_timer.start(2500)
@@ -283,6 +331,7 @@ class OverlayWidget(QWidget):
         self._label.setText(msg)
         self._label.setStyleSheet(_STYLE_ERROR)
         self._duration_label.setText("")
+        self._volume_meter.setVisible(False)
         self._show_buttons(False)
         self.show()
         self._hide_timer.start(4000)
@@ -291,3 +340,7 @@ class OverlayWidget(QWidget):
         mins = int(seconds) // 60
         secs = int(seconds) % 60
         self._duration_label.setText(f"{mins}:{secs:02d}")
+
+    def update_volume(self, level: float):
+        """Update the volume meter (0.0–1.0)."""
+        self._volume_meter.set_level(level)

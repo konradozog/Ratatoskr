@@ -258,6 +258,7 @@ class RatatoskrApp:
     def _update_duration(self):
         if self._recorder.is_recording:
             self._overlay.update_duration(self._recorder.duration)
+            self._overlay.update_volume(self._recorder.rms)
 
     def _try_recover(self):
         audio = load_recovery_wav()
