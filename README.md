@@ -34,6 +34,8 @@ For faster transcription with a GPU, install CUDA libraries compatible with [CTr
 ratatoskr
 ```
 
+Or double-click `run_ratatoskr.bat` to start it from the `.venv` without a console window.
+
 The app starts minimized in the system tray. Right-click the tray icon for settings.
 
 ## Settings

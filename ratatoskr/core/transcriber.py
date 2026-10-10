@@ -1,7 +1,9 @@
 """Ratatoskr – transcriber engine (faster-whisper, simplified for voice memos)."""
 
 import threading
-from typing import Optional, Callable
+from typing import Optional, Callable, List
+
+import numpy as np
 
 
 # Models suitable for quick voice-to-text (speed vs accuracy trade-off)
@@ -26,6 +28,52 @@ LANGUAGES = {
     "zh": "Chinese",
     "ko": "Korean",
 }
+
+
+def collect_chunks(
+    audio: np.ndarray,
+    chunks: List[dict],
+    sampling_rate: int = 16000,
+    max_duration: float = float("inf"),
+):
+    """faster-whisper 1.2.1's ``vad.collect_chunks`` with the same output, minus
+    its quadratic cost.
+
+    Upstream grows the speech audio by one ``np.concatenate`` per VAD chunk, so
+    every chunk copies all the speech before it. With our 300 ms silence
+    threshold a 30 min memo has ~450 chunks and waited ~9 s before transcription
+    started (60 min: ~30 s). Here the slices are collected in a list and
+    concatenated once per output chunk.
+    """
+    if not chunks:
+        return [np.array([], dtype=np.float32)], [{"offset": 0, "duration": 0, "segments": []}]
+
+    audio_chunks = []
+    chunks_metadata = []
+    pieces, segments, current, total = [], [], 0, 0
+
+    for chunk in chunks:
+        length = chunk["end"] - chunk["start"]
+        if current + length > max_duration * sampling_rate:
+            audio_chunks.append(np.concatenate(pieces) if pieces else np.array([], dtype=np.float32))
+            chunks_metadata.append(
+                {"offset": total / sampling_rate, "duration": current / sampling_rate, "segments": segments}
+            )
+            total += current
+            pieces, segments, current = [], [], 0
+            # as upstream: a chunk that opens a new output chunk is not listed in its segments
+            pieces.append(audio[chunk["start"]:chunk["end"]])
+            current = length
+        else:
+            segments.append(chunk)
+            pieces.append(audio[chunk["start"]:chunk["end"]])
+            current += length
+
+    audio_chunks.append(np.concatenate(pieces) if pieces else np.array([], dtype=np.float32))
+    chunks_metadata.append(
+        {"offset": total / sampling_rate, "duration": current / sampling_rate, "segments": segments}
+    )
+    return audio_chunks, chunks_metadata
 
 
 class TranscriberEngine:
@@ -74,8 +122,10 @@ class TranscriberEngine:
                 if on_status:
                     on_status(f"Loading model {model_name} on {device} ({compute_type})...")
 
+                import faster_whisper.transcribe
                 from faster_whisper import WhisperModel
 
+                faster_whisper.transcribe.collect_chunks = collect_chunks
                 self._model = WhisperModel(model_name, device=device, compute_type=compute_type)
                 self._model_name = model_name
                 self._device = device
